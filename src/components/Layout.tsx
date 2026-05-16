@@ -18,23 +18,24 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { logout } from '../lib/firebase';
 import { cn } from '../lib/utils';
+import { Button } from './Button';
 
 interface SidebarItemProps {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   label: string;
   active?: boolean;
   onClick: () => void;
   collapsed?: boolean;
 }
 
-const SidebarItem = ({ icon: Icon, label, active, onClick, collapsed }: SidebarItemProps) => (
+const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active, onClick, collapsed }) => (
   <button
     onClick={onClick}
     className={cn(
       "flex items-center w-full p-3 rounded-xl transition-all duration-200 group",
       active 
-        ? "bg-primary-600 text-white shadow-lg shadow-primary-500/30" 
-        : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+        ? "bg-primary-600 text-white shadow-lg glow-blue" 
+        : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
     )}
   >
     <Icon className={cn("w-5 h-5", collapsed ? "mx-auto" : "mr-3")} />
@@ -47,7 +48,7 @@ export const Layout: React.FC<{ children: React.ReactNode; currentPage: string; 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const menuItems = [
+  const menuItems: { id: string; label: string; icon: React.ComponentType<any> }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'materials', label: 'Materiais PDF', icon: FileText },
     { id: 'subjects', label: 'Matérias', icon: BookOpen },

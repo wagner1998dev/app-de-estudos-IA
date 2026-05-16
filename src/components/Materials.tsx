@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   FileText, 
   Upload, 
@@ -10,7 +10,8 @@ import {
   CheckCircle,
   FileCheck,
   BrainCircuit,
-  Lightbulb
+  Lightbulb,
+  X
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -19,9 +20,11 @@ import { Button } from './Button';
 import { cn } from '../lib/utils';
 import { SUBJECTS } from '../constants';
 import * as pdfjs from 'pdfjs-dist';
+// @ts-ignore - Vite handles ?url suffix
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 // pdfjs initialization
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export const Materials: React.FC = () => {
   const { user } = useAuth();
@@ -30,6 +33,11 @@ export const Materials: React.FC = () => {
   const [selectedSubject, setSelectedSubject] = useState(SUBJECTS[0].id);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [activeMaterial, setActiveMaterial] = useState<any>(null);
+  const [generatingQuiz, setGeneratingQuiz] = useState<string | null>(null);
+  const [flashcardsCount, setFlashcardsCount] = useState(5);
+  const [quizQuestionsCount, setQuizQuestionsCount] = useState(5);
 
   useEffect(() => {
     if (!user) return;
@@ -57,58 +65,20 @@ export const Materials: React.FC = () => {
     return fullText;
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-
-    setUploading(true);
-    try {
-      const text = await extractTextFromPDF(file);
-      
-      // Save metadata to Firestore
-      const docRef = await addDoc(collection(db, 'materials'), {
-        userId: user.uid,
-        title: file.name,
-        subject: selectedSubject,
-        content: text,
-        status: 'processing',
-        createdAt: serverTimestamp(),
-      });
-
-      setAnalyzing(docRef.id);
-      
-      // Call backend for AI analysis
-      const response = await fetch('/api/ai/analyze-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, fileName: file.name }),
-      });
-      
-      const analysis = await response.json();
-      
-      // Update with AI insights
-      await addDoc(collection(db, 'materials'), { ...analysis, id: docRef.id }); // This is wrong, should update
-      // Actually let me just update the existing doc
-      // Wait, I messed up the addDoc above. I'll fix it in the logic.
-    } catch (error) {
-      console.error("Upload error:", error);
-    } finally {
-      setUploading(false);
-      setAnalyzing(null);
-      setIsModalOpen(false);
-    }
-  };
-
-  // Fixed upload logic for the sake of the demo
   const handleFileUpload = async (file: File) => {
     if (!user) return;
     setUploading(true);
+    setAnalyzing('pending');
     try {
       const text = await extractTextFromPDF(file);
       const res = await fetch('/api/ai/analyze-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, fileName: file.name }),
+        body: JSON.stringify({ 
+          text, 
+          fileName: file.name,
+          flashcardsCount
+        }),
       });
       const analysis = await res.json();
       
@@ -117,6 +87,8 @@ export const Materials: React.FC = () => {
         title: file.name,
         subject: selectedSubject,
         content: text,
+        flashcardsCount,
+        quizQuestionsCount,
         ...analysis,
         createdAt: serverTimestamp(),
       }).catch(error => handleFirestoreError(error, OperationType.CREATE, 'materials'));
@@ -124,7 +96,40 @@ export const Materials: React.FC = () => {
       console.error(err);
     } finally {
       setUploading(false);
+      setAnalyzing(null);
       setIsModalOpen(false);
+    }
+  };
+
+  const generateQuiz = async (material: any) => {
+    if (!user || generatingQuiz) return;
+    setGeneratingQuiz(material.id);
+    try {
+      const res = await fetch('/api/ai/generate-quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: material.content, 
+          subject: material.subject,
+          questionsCount: material.quizQuestionsCount || quizQuestionsCount
+        }),
+      });
+      const questions = await res.json();
+      
+      await addDoc(collection(db, 'quizzes'), {
+        userId: user.uid,
+        materialId: material.id,
+        subject: material.title,
+        questions,
+        createdAt: serverTimestamp(),
+      });
+      
+      alert('Simulado gerado com sucesso! Vá para a aba Simulados para responder.');
+    } catch (err) {
+      console.error(err);
+      alert('Falha ao gerar simulado.');
+    } finally {
+      setGeneratingQuiz(null);
     }
   };
 
@@ -136,6 +141,11 @@ export const Materials: React.FC = () => {
         handleFirestoreError(error, OperationType.DELETE, `materials/${id}`);
       }
     }
+  };
+
+  const openSummary = (material: any) => {
+    setActiveMaterial(material);
+    setIsSummaryModalOpen(true);
   };
 
   return (
@@ -214,8 +224,19 @@ export const Materials: React.FC = () => {
               </div>
 
               <div className="flex gap-3 relative z-10">
-                <button className="flex-1 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:bg-slate-700 transition-colors uppercase tracking-widest">Resumo</button>
-                <button className="flex-1 py-3 bg-primary-600 text-white font-bold rounded-xl text-xs hover:bg-primary-500 transition-colors uppercase tracking-widest glow-blue">Estudar</button>
+                <button 
+                  onClick={() => openSummary(material)}
+                  className="flex-1 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs hover:bg-slate-700 transition-colors uppercase tracking-widest"
+                >
+                  Resumo
+                </button>
+                <button 
+                  onClick={() => generateQuiz(material)}
+                  disabled={generatingQuiz === material.id}
+                  className="flex-1 py-3 bg-primary-600 text-white font-bold rounded-xl text-xs hover:bg-primary-500 transition-colors uppercase tracking-widest glow-blue disabled:opacity-50"
+                >
+                  {generatingQuiz === material.id ? 'Gerando...' : 'Estudar'}
+                </button>
               </div>
             </motion.div>
           ))}
@@ -232,6 +253,104 @@ export const Materials: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Summary Modal */}
+      {isSummaryModalOpen && activeMaterial && (
+        <div className="fixed inset-0 bg-[#020617]/95 backdrop-blur-xl z-[110] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-immersive-card w-full max-w-4xl h-[80vh] rounded-[3rem] shadow-2xl border border-slate-800 relative flex flex-col overflow-hidden"
+          >
+            <div className="p-8 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-primary-600/20 rounded-xl text-primary-500">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-white">{activeMaterial.title}</h2>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Resumo Otimizado por IA</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsSummaryModalOpen(false)} 
+                className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-10 custom-scrollbar space-y-12">
+              <section>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-1 h-8 bg-primary-500 rounded-full"></div>
+                  <h3 className="text-2xl font-black text-white tracking-tight italic">SÍNTESE <span className="text-primary-500 not-italic">ESTRATÉGICA</span></h3>
+                </div>
+                <div className="prose prose-invert max-w-none">
+                  <p className="text-slate-300 leading-relaxed text-lg font-medium bg-slate-900/30 p-8 rounded-3xl border border-slate-800/50">
+                    {activeMaterial.summary}
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-1 h-8 bg-orange-500 rounded-full"></div>
+                  <h3 className="text-2xl font-black text-white tracking-tight italic">TÓPICOS <span className="text-orange-500 not-italic">CRÍTICOS</span></h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {activeMaterial.topics?.map((topic: string, i: number) => (
+                    <div key={i} className="flex items-center gap-4 p-5 bg-slate-900/50 border border-slate-800 rounded-2xl group hover:border-orange-500/30 transition-all">
+                      <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-orange-500 font-black text-xs">
+                        {i + 1}
+                      </div>
+                      <span className="text-slate-300 font-bold">{topic}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
+                  <h3 className="text-2xl font-black text-white tracking-tight italic">FLASHCARDS <span className="text-emerald-500 not-italic">MEMÓRIA</span></h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {activeMaterial.flashcards?.map((card: any, i: number) => (
+                    <div key={i} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 hover:glow-emerald transition-all">
+                      <div className="mb-4">
+                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Front</span>
+                        <p className="text-white font-bold text-lg mt-1">{card.front}</p>
+                      </div>
+                      <div className="pt-4 border-t border-slate-800">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Back</span>
+                        <p className="text-slate-400 font-medium text-sm mt-1">{card.back}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <div className="p-8 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsSummaryModalOpen(false)}
+                className="rounded-xl px-8"
+              >
+                FECHAR
+              </Button>
+              <Button 
+                onClick={() => generateQuiz(activeMaterial)}
+                className="rounded-xl px-10 glow-blue"
+                disabled={generatingQuiz === activeMaterial.id}
+              >
+                {generatingQuiz === activeMaterial.id ? 'GERANDO QUIZ...' : 'GERAR SIMULADO IA'}
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Upload Modal */}
       {isModalOpen && (
@@ -257,15 +376,39 @@ export const Materials: React.FC = () => {
             </header>
 
             <div className="space-y-8">
-              <div>
-                <label className="block text-[10px] uppercase font-black text-slate-500 tracking-widest mb-3">Selecione o Eixo Temático</label>
-                <select 
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-xl p-4 focus:ring-2 focus:ring-primary-500 appearance-none font-bold"
-                >
-                  {SUBJECTS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-1">
+                  <label className="block text-[10px] uppercase font-black text-slate-500 tracking-widest mb-3">Flashcards</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    max="15"
+                    value={flashcardsCount}
+                    onChange={(e) => setFlashcardsCount(parseInt(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-xl p-4 focus:ring-2 focus:ring-primary-500 font-bold"
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="block text-[10px] uppercase font-black text-slate-500 tracking-widest mb-3">Questões Quiz</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    max="15"
+                    value={quizQuestionsCount}
+                    onChange={(e) => setQuizQuestionsCount(parseInt(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-xl p-4 focus:ring-2 focus:ring-primary-500 font-bold"
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="block text-[10px] uppercase font-black text-slate-500 tracking-widest mb-3">Eixo Temático</label>
+                  <select 
+                    value={selectedSubject}
+                    onChange={(e) => setSelectedSubject(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-300 rounded-xl p-4 focus:ring-2 focus:ring-primary-500 appearance-none font-bold"
+                  >
+                    {SUBJECTS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
               </div>
 
               <div className="border-2 border-dashed border-slate-800 bg-slate-900/50 rounded-3xl p-12 text-center relative hover:border-primary-500 transition-all group">

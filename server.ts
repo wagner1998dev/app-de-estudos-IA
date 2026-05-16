@@ -24,7 +24,7 @@ async function startServer() {
   // AI Routes
   app.post("/api/ai/analyze-pdf", async (req, res) => {
     try {
-      const { text, fileName } = req.body;
+      const { text, fileName, flashcardsCount = 5 } = req.body;
       
       const prompt = `Você é um tutor especializado no concurso do CAU/SP (Conselho de Arquitetura e Urbanismo de São Paulo).
       Analise o seguinte conteúdo extraído de um PDF intitulado "${fileName}":
@@ -34,7 +34,7 @@ async function startServer() {
       Gere:
       1. Um resumo estruturado e profissional.
       2. Uma lista de tópicos mais importantes para o concurso.
-      3. 5 flashcards (pergunta e resposta).
+      3. ${flashcardsCount} flashcards (pergunta e resposta).
       
       Retorne o resultado em formato JSON estrito.`;
 
@@ -74,9 +74,9 @@ async function startServer() {
 
   app.post("/api/ai/generate-quiz", async (req, res) => {
     try {
-      const { text, subject } = req.body;
+      const { text, subject, questionsCount = 5 } = req.body;
       
-      const prompt = `Gere um quiz com 5 questões sobre o assunto "${subject}" baseado no conteúdo: "${text}".
+      const prompt = `Gere um quiz com ${questionsCount} questões sobre o assunto "${subject}" baseado no conteúdo: "${text}".
       As questões devem ser de nível concurso público, variando entre múltipla escolha e verdadeiro/falso.
       Inclua uma explicação detalhada para cada resposta.`;
 
