@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and statistics",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "streak": { "type": "integer" },
+        "lastStudyDate": { "type": "string", "format": "date-time" },
+        "totalStudyTime": { "type": "integer", "description": "Total study time in minutes" },
+        "points": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "StudyMaterial": {
+      "title": "Study Material",
+      "description": "PDFs uploaded by the user and processed content",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "content": { "type": "string", "description": "Extracted text content" },
+        "summary": { "type": "string" },
+        "topics": { "type": "array", "items": { "type": "string" } },
+        "flashcards": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "front": { "type": "string" },
+              "back": { "type": "string" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Auto-generated quiz questions",
+      "type": "object",
+      "properties": {
+        "materialId": { "type": "string" },
+        "subject": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "question": { "type": "string" },
+              "type": { "type": "string", "enum": ["multiple-choice", "true-false", "discursive"] },
+              "options": { "type": "array", "items": { "type": "string" } },
+              "correctAnswer": { "type": "string" },
+              "explanation": { "type": "string" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "QuizAttempt": {
+      "title": "Quiz Attempt",
+      "description": "User completion of a quiz",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "score": { "type": "integer" },
+        "total": { "type": "integer" },
+        "answers": { "type": "object" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Spaced repetition schedule",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "materialId": { "type": "string" },
+        "nextReviewDate": { "type": "string", "format": "date-time" },
+        "interval": { "type": "integer", "description": "Interval in days (1, 7, 15, 30)" },
+        "status": { "type": "string", "enum": ["pending", "completed"] }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User document" },
+    "/materials/{materialId}": { "schema": "StudyMaterial", "description": "Study materials" },
+    "/quizzes/{quizId}": { "schema": "Quiz", "description": "Quizzes" },
+    "/attempts/{attemptId}": { "schema": "QuizAttempt", "description": "User attempts" },
+    "/reviews/{reviewId}": { "schema": "Review", "description": "Review schedule" }
+  }
+}

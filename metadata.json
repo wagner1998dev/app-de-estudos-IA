@@ -1,0 +1,8 @@
+{
+  "name": "EstudaCAU IA",
+  "description": "Plataforma inteligente de estudos para o concurso do CAU/SP com IA, simulados e revisões espaçadas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
